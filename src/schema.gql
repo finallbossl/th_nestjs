@@ -1,0 +1,88 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type Category {
+  createdAt: DateTime!
+  id: Int!
+  name: String!
+  products: [Product!]
+  slug: String!
+  updatedAt: DateTime!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+type Mutation {
+  createCategory(name: String!, slug: String!): Category!
+  createOrder(items: [OrderItemInput!]!, userId: Int!): Order!
+  createProduct(categoryId: Int, description: String, name: String!, price: Float!, stock: Int = 0): Product!
+  createUser(email: String!, name: String!): User!
+  removeCategory(id: Int!): Category!
+  removeOrder(id: Int!): Order!
+  removeProduct(id: Int!): Product!
+  updateCategory(id: Int!, name: String, slug: String): Category!
+  updateOrderStatus(id: Int!, status: String!): Order!
+  updateProduct(categoryId: Int, description: String, id: Int!, name: String, price: Float, stock: Int): Product!
+}
+
+type Order {
+  createdAt: DateTime!
+  id: Int!
+  orderItems: [OrderItem!]!
+  status: String!
+  total: Float!
+  updatedAt: DateTime!
+  user: User!
+  userId: Int!
+}
+
+type OrderItem {
+  createdAt: DateTime!
+  id: Int!
+  orderId: Int!
+  price: Float!
+  product: Product!
+  productId: Int!
+  quantity: Int!
+  updatedAt: DateTime!
+}
+
+input OrderItemInput {
+  productId: Int!
+  quantity: Int!
+}
+
+type Product {
+  category: Category
+  categoryId: Int
+  createdAt: DateTime!
+  description: String
+  id: Int!
+  name: String!
+  price: Float!
+  stock: Int!
+  updatedAt: DateTime!
+}
+
+type Query {
+  categories: [Category!]!
+  category(id: Int!): Category!
+  categoryBySlug(slug: String!): Category!
+  order(id: Int!): Order!
+  orders: [Order!]!
+  ordersByUser(userId: Int!): [Order!]!
+  product(id: Int!): Product!
+  products: [Product!]!
+  users: [User!]!
+}
+
+type User {
+  email: String!
+  id: Int!
+  name: String!
+  orders: [Order!]
+}
