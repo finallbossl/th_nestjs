@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { RedisService } from '../redis/redis.service';
 
-// Define User type based on Prisma schema
+// Kiểu User dựa theo Prisma schema
 type PrismaUser = {
   id: number;
   name: string;
@@ -11,64 +11,74 @@ type PrismaUser = {
 
 @Injectable()
 export class UserService {
-  private readonly CACHE_TTL = 3600; // 1 hour
+  private readonly CACHE_TTL = 3600; // 1 giờ
 
   constructor(
-    private prisma: PrismaService,
-    private redis: RedisService,
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
   ) {}
 
+  /**
+   * Lấy danh sách users (có cache)
+   */
   async findAll(): Promise<PrismaUser[]> {
     const cacheKey = this.redis.createKey('users', 'all');
 
-    // Kiểm tra cache trước
+    // 1️⃣ Check cache
     const cached = await this.redis.get<PrismaUser[]>(cacheKey);
     if (cached) {
       return cached;
     }
 
-    // Lấy từ database
-    const users = await (this.prisma as any).user.findMany();
+    // 2️⃣ Query DB
+    const users = await this.prisma.user.findMany();
 
-    // Lưu vào cache
+    // 3️⃣ Save cache
     await this.redis.set(cacheKey, users, this.CACHE_TTL);
 
     return users;
   }
 
+  /**
+   * Lấy user theo ID (có cache)
+   */
   async findOne(id: number): Promise<PrismaUser> {
     const cacheKey = this.redis.createKey('user', id);
 
-    // Kiểm tra cache trước
+    // 1️⃣ Check cache
     const cached = await this.redis.get<PrismaUser>(cacheKey);
     if (cached) {
       return cached;
     }
 
-    // Lấy từ database
-    const user = await (this.prisma as any).user.findUnique({
+    // 2️⃣ Query DB
+    const user = await this.prisma.user.findUnique({
       where: { id },
     });
+
     if (!user) {
-      throw new Error(`User with ID ${id} not found`);
+      throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    // Lưu vào cache
+    // 3️⃣ Save cache
     await this.redis.set(cacheKey, user, this.CACHE_TTL);
 
     return user;
   }
 
+  /**
+   * Tạo user mới
+   */
   async create(data: { name: string; email: string }): Promise<PrismaUser> {
-    // Tạo user mới
-    const user = await (this.prisma as any).user.create({
+    // 1️⃣ Create DB
+    const user = await this.prisma.user.create({
       data,
     });
 
-    // Xóa cache users:all để làm mới danh sách
+    // 2️⃣ Invalidate cache list
     await this.redis.del(this.redis.createKey('users', 'all'));
 
-    // Lưu user mới vào cache
+    // 3️⃣ Cache user mới
     await this.redis.set(
       this.redis.createKey('user', user.id),
       user,
@@ -79,10 +89,43 @@ export class UserService {
   }
 
   /**
-   * Xóa cache của user khi có thay đổi
+   * Update user
    */
-  async invalidateUserCache(userId?: number): Promise<void> {
+  async update(
+    id: number,
+    data: Partial<{ name: string; email: string }>,
+  ): Promise<PrismaUser> {
+    const user = await this.prisma.user.update({
+      where: { id },
+      data,
+    });
+
+    // Invalidate cache
+    await this.invalidateUserCache(id);
+
+    return user;
+  }
+
+  /**
+   * Delete user
+   */
+  async remove(id: number): Promise<void> {
+    await this.prisma.user.delete({
+      where: { id },
+    });
+
+    // Invalidate cache
+    await this.invalidateUserCache(id);
+  }
+
+  /**
+   * Xóa cache user
+   */
+  private async invalidateUserCache(userId?: number): Promise<void> {
+    // Xóa list
     await this.redis.del(this.redis.createKey('users', 'all'));
+
+    // Xóa detail
     if (userId) {
       await this.redis.del(this.redis.createKey('user', userId));
     }

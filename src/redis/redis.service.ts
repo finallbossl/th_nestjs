@@ -1,7 +1,6 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
-// Define Cache interface to avoid TypeScript module resolution issues
 interface Cache {
   get<T>(key: string): Promise<T | undefined>;
   set<T>(key: string, value: T, ttl?: number): Promise<void>;
@@ -11,49 +10,81 @@ interface Cache {
 
 @Injectable()
 export class RedisService {
+  private readonly logger = new Logger(RedisService.name);
+
   constructor(@Inject(CACHE_MANAGER) private cacheManager: Cache) {}
 
-  /**
-   * Lấy giá trị từ cache
-   */
   async get<T>(key: string): Promise<T | undefined> {
-    return await this.cacheManager.get<T>(key);
+    const value = await this.cacheManager.get<T>(key);
+    this.logger.debug(`GET ${key} -> ${value !== undefined ? 'FOUND' : 'MISS'}`);
+    return value;
   }
 
-  /**
-   * Lưu giá trị vào cache
-   */
-  async set<T>(key: string, value: T, ttl?: number): Promise<void> {
-    await this.cacheManager.set(key, value, ttl);
+  async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
+    const ttlMs = ttlSeconds ? ttlSeconds * 1000 : undefined;
+    await this.cacheManager.set(key, value, ttlMs);
+    this.logger.debug(`SET ${key} (ttl=${ttlSeconds ?? 'default'}s)`);
   }
 
-  /**
-   * Xóa một key khỏi cache
-   */
   async del(key: string): Promise<void> {
     await this.cacheManager.del(key);
+    this.logger.debug(`DEL ${key}`);
   }
 
-  /**
-   * Xóa tất cả keys khỏi cache
-   */
   async reset(): Promise<void> {
     await this.cacheManager.reset();
+    this.logger.warn('CACHE RESET');
   }
 
-  /**
-   * Kiểm tra key có tồn tại trong cache không
-   */
   async has(key: string): Promise<boolean> {
-    const value = await this.cacheManager.get(key);
-    return value !== undefined && value !== null;
+    return (await this.get(key)) !== undefined;
   }
 
-  /**
-   * Tạo cache key với pattern
-   */
   createKey(prefix: string, ...parts: (string | number)[]): string {
     return `${prefix}:${parts.join(':')}`;
   }
-}
 
+  /**
+   * Test Redis thật (không phải in-memory)
+   */
+  async isRedisActive(): Promise<boolean> {
+    try {
+      const key = '__redis_ping__';
+      const value = Date.now().toString();
+
+      await this.set(key, value, 2);
+      const result = await this.get(key);
+
+      return result === value;
+    } catch (e) {
+      this.logger.error('Redis not active', e);
+      return false;
+    }
+  }
+
+  /**
+   * Chỉ dùng để debug / dev
+   */
+  async getAllKeys(pattern = '*'): Promise<string[]> {
+    try {
+      const { createClient } = await import('redis');
+
+      const client = createClient({
+        socket: {
+          host: process.env.REDIS_HOST || 'localhost',
+          port: Number(process.env.REDIS_PORT || 6379),
+        },
+        password: process.env.REDIS_PASSWORD || undefined,
+      });
+
+      await client.connect();
+      const keys = await client.keys(pattern);
+      await client.disconnect();
+
+      return keys;
+    } catch (e) {
+      this.logger.warn(`Cannot read keys from Redis: ${e.message}`);
+      return [];
+    }
+  }
+}

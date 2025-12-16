@@ -1,6 +1,7 @@
 import { Global, Module, Logger } from '@nestjs/common';
 import { CacheModule } from '@nestjs/cache-manager';
 import { RedisService } from './redis.service';
+import { RedisController } from './redis.controller';
 
 const logger = new Logger('RedisModule');
 
@@ -24,11 +25,16 @@ const logger = new Logger('RedisModule');
               },
               password: process.env.REDIS_PASSWORD,
               ttl: parseInt(process.env.REDIS_TTL || '3600'), // Default 1 hour
+              // Không dùng prefix để key trùng với key trong code
+              // Nếu muốn dùng prefix, set REDIS_KEY_PREFIX trong .env
+              keyPrefix: process.env.REDIS_KEY_PREFIX || '',
             });
 
             logger.log('Redis connection established successfully');
+            logger.log(`Redis host: ${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || '6379'}`);
+            logger.log(`Redis key prefix: "${process.env.REDIS_KEY_PREFIX || '(none)'}"`);
             return {
-              store: () => store,
+              store: store,
             };
           } catch (error) {
             logger.warn(
@@ -53,6 +59,7 @@ const logger = new Logger('RedisModule');
       },
     }),
   ],
+  controllers: [RedisController],
   providers: [RedisService],
   exports: [RedisService, CacheModule],
 })
